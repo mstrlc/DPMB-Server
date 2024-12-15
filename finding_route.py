@@ -16,11 +16,11 @@ from utils import get_data, get_color, assign_color, get_street_path, count_dela
 G = nx.DiGraph()
 
 
-def add_linestring_to_graph(geom, label, oneway):
+def add_linestring_to_graph(geom, label, oneway, weight, maxspeed):
     nodes = list(geom.coords)
     for i in range(len(nodes) - 1):
         u, v = nodes[i], nodes[i+1]
-        dist = Point(u).distance(Point(v))
+        dist = Point(u).distance(Point(v)) * weight
         G.add_edge(u, v, weight=dist, label=label)
         # also add the reverse edge if oneway is "no"
         if oneway == "no":
@@ -32,8 +32,10 @@ def create_graph(gdf):
         geom = row['geometry']
         label = row['nazev']
         oneway = row['oneway']
+        weight = row['weight']
+        maxspeed = row['maxspeed']
         if isinstance(geom, LineString):
-            add_linestring_to_graph(geom, label, oneway)
+            add_linestring_to_graph(geom, label, oneway, weight, maxspeed)
     # nx.write_graphml(G, "datasets/road_network_with_labels.graphml")
 
 
