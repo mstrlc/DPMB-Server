@@ -1,6 +1,8 @@
+.DS_Store
 .app/venv/
 datasets/road.geojson
 __pycache__/
+.vscode/
 
 
 *.pyc
