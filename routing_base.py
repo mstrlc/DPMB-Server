@@ -1,10 +1,20 @@
 import geopandas as gpd
 import json
 import requests
+import osm2geojson
 
 
-def query_osm(area_name: str):
-    request = f"""
+def query_osm(area_name: str) -> dict:
+    """
+    Queries OpenStreetMap (OSM) Overpass API for highway data in a given area.
+
+    Args:
+        area_name (str): Name of the area to query, e.g., "Brno".
+
+    Returns:
+        dict: Response data from the Overpass API in JSON format.
+    """
+    query = f"""
     [out:json][timeout:25];
     area[name="{area_name}"]->.searchArea;
     (
@@ -14,66 +24,92 @@ def query_osm(area_name: str):
     >;
     out skel qt;
     """
-    return requests.get(
-        f"https://overpass-api.de/api/interpreter?data={request}"
-    ).json()
+    url = "https://overpass-api.de/api/interpreter"
+    headers = {"Content-Type": "application/x-www-form-urlencoded"}
+
+    response = requests.post(url, data=query, headers=headers)
+    response.raise_for_status()  # ensure HTTP request was successful
+    json = response.json()
+
+    return osm2geojson.json2geojson(json)
+
+
+def transform_osm_data(orig_data: dict) -> dict:
+    """
+    Transforms raw OSM data into a GeoJSON format suitable for routing.
+
+    Args:
+        orig_data (dict): Raw OSM data in JSON format.
+
+    Returns:
+        dict: Transformed GeoJSON data.
+    """
+    transformed_data = {"type": "FeatureCollection", "features": []}
+
+    for element in orig_data.get("features", []):
+        # extract feature properties with defaults
+        name = element["properties"]["tags"].get("name", "")
+        oneway = element["properties"]["tags"].get("oneway", "no")
+        highway_type = element["properties"]["tags"].get("highway", "")
+        maxspeed = element["properties"]["tags"].get("maxspeed", "0")
+
+        # split coordinates into line segments
+        coordinates = element["geometry"]["coordinates"]
+        line_segments = [
+            [coordinates[i], coordinates[i + 1]] for i in range(len(coordinates) - 1)
+        ]
+
+        # create a new feature for each line segment
+        for segment in line_segments:
+            transformed_data["features"].append(
+                {
+                    "type": "Feature",
+                    "properties": {
+                        "nazev": name,
+                        "oneway": oneway,
+                        "type": highway_type,
+                        "maxspeed": maxspeed,
+                    },
+                    "geometry": {"type": "LineString", "coordinates": segment},
+                }
+            )
+
+    return transformed_data
+
+
+def save_geojson(data: dict, filepath: str) -> None:
+    """
+    Saves GeoJSON data to a file.
+
+    Args:
+        data (dict): GeoJSON data to save.
+        filepath (str): Path to the output file.
+    """
+    with open(filepath, "w", encoding="utf-8") as outfile:
+        json.dump(data, outfile, ensure_ascii=False)
+    print(f"GeoJSON saved to {filepath}")
 
 
 def get_routing_base(area_name: str = "Brno") -> gpd.GeoDataFrame:
-    """_summary_
+    """
+    Generates a routing base for the specified area using OSM data.
 
     Args:
-        area_name (str): OSM area name, e.g. "Brno"
+        area_name (str): OSM area name, e.g., "Brno".
 
     Returns:
-        gpd.GeoDataFrame: GeoDataFrame with routing base for the area
+        gpd.GeoDataFrame: GeoDataFrame with routing base for the area.
     """
-    # transform json to expected format
-    orig_json = query_osm(area_name)
-    new_json = {"type": "FeatureCollection", "features": []}
+    output_path = "./datasets/osm_routing_base.geojson"
 
-    for feat in orig_json["features"]:
-        # get properties useful for routing
-        try:
-            nazev = feat["properties"]["name"]
-        except:
-            nazev = ""
-        try:
-            oneway = feat["properties"]["oneway"]
-        except:
-            oneway = "no"
-        try:
-            type = feat["properties"]["highway"]
-        except:
-            type = ""
-        try:
-            maxspeed = feat["properties"]["maxspeed"]
-        except:
-            maxspeed = "0"
-        # split current feat with multiple coords into multiple feats with one coord to match the original routing base
-        coordinates = feat["geometry"]["coordinates"]
-        # take the list of coordinates and transform it to tuples of coordinates [start,end]
-        coord_touples = []
-        for i in range(len(coordinates) - 1):
-            coord_touples.append([coordinates[i], coordinates[i + 1]])
-        # create individual features for each coordinate touple
-        for i in range(len(coord_touples)):
-            new_feat = {
-                "type": "Feature",
-                "properties": {
-                    "nazev": nazev,
-                    "oneway": oneway,
-                    "type": type,
-                    "maxspeed": maxspeed,
-                },
-                "geometry": {"type": "LineString", "coordinates": coord_touples[i]},
-            }
-            new_json["features"].append(new_feat)
-    # save new json
-    with open("./datasets/osm_routing_base.geojson", "w") as outfile:
-        json.dump(
-            new_json, outfile, ensure_ascii=False
-        )  # ensure non-ascii characters are non-escaped as that's not expected
-    print("Converting JSON done")
-    # load new json
-    return gpd.read_file("./datasets/osm_routing_base.geojson")
+    # query OSM data
+    raw_data = query_osm(area_name)
+
+    # transform raw OSM data
+    transformed_data = transform_osm_data(raw_data)
+
+    # save transformed data to GeoJSON and update the cached hash
+    save_geojson(transformed_data, output_path)
+
+    # load GeoJSON into GeoDataFrame
+    return gpd.read_file(output_path)

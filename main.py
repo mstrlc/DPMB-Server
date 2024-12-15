@@ -15,11 +15,11 @@ from data_for_plot import get_data_for_plot_bars, \
     get_data_for_plot_alerts_type, get_data_for_plot_critical_streets_alerts
 from data_preparation_street import find_square, find_nearest_street, get_nearest_street
 from finding_route import find_route_by_coord, create_graph
+from routing_base import get_routing_base
 from models import  PlotDataRequestBody, RoutingCoordRequestBody, EmailSchema
 import geopandas as gpd
 
 import warnings
-import json
 
 # dont show warnings in log
 warnings.simplefilter(action='ignore', category=FutureWarning)
@@ -52,36 +52,9 @@ conf = ConnectionConfig(
 grid_gdf = gpd.read_file("./datasets/streets_grid.geojson")
 merged_gdf_streets = gpd.read_file("./datasets/streets_grid_coord.geojson")
 streets_gdf = gpd.read_file("./datasets/streets_exploded.geojson")
-old_routing_base = gpd.read_file("./datasets/new_routing_base.geojson")
-routing_base = gpd.read_file("./datasets/brno.geojson")
 
-# transform json to expected format
-orig_json = json.load(open("./datasets/osm_export_converted.geojson")) # converted from OSM overpass API to GeoJSON https://tyrasd.github.io/osmtogeojson/
-new_json = {'type': 'FeatureCollection', 'features': []}
-
-for feat in orig_json['features']:
-    # strip unused (for now) properties
-    # names
-    try:
-        nazev = feat['properties']['name']
-    except:
-        nazev = ""
-    # split current feat with multiple coords into multiple feats with one coord to match the original routing base
-    coordinates = feat['geometry']['coordinates']
-    # take the list of coordinates and transform it to tuples of coordinates [start,end]
-    coord_touples = []
-    for i in range(len(coordinates) - 1):
-        coord_touples.append([coordinates[i], coordinates[i + 1]])
-    # create individual features for each coordinate touple
-    for i in range(len(coord_touples)):
-        new_feat = {'type': 'Feature', 'properties': {'nazev': nazev}, 'geometry': {'type': 'LineString', 'coordinates': coord_touples[i]}}
-        new_json['features'].append(new_feat)
-    # save new json
-    with open("./datasets/osm_routing_base.geojson", "w") as outfile:
-        json.dump(new_json, outfile, ensure_ascii=False) # ensure non-ascii characters are non-escaped as that's not expected
-
-# load new json
-routing_base = gpd.read_file("./datasets/osm_routing_base.geojson")
+# load routing base from OSM
+routing_base = get_routing_base() # default area is Brno
 
 # creating graph for finding a route
 create_graph(routing_base)
