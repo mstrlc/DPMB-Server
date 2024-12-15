@@ -18,7 +18,7 @@ def query_osm(area_name: str) -> dict:
     [out:json][timeout:25];
     area[name="{area_name}"]->.searchArea;
     (
-        way["highway"~"motorway|trunk|primary|secondary|tertiary|unclassified|residential|living_street"]["access"!~"private"](area.searchArea);
+        way["highway"~"motorway|trunk|primary|secondary|tertiary|unclassified|residential|living_street"]["access"!~"private"]["motor_vehicle"!~"no"](area.searchArea);
     );
     out body;
     >;
@@ -50,9 +50,22 @@ def transform_osm_data(orig_data: dict) -> dict:
         # extract feature properties with defaults
         name = element["properties"]["tags"].get("name", "")
         oneway = element["properties"]["tags"].get("oneway", "no")
-        highway_type = element["properties"]["tags"].get("highway", "")
+        road_type = element["properties"]["tags"].get("highway", "")
         maxspeed = element["properties"]["tags"].get("maxspeed", "0")
 
+        # assign weight based on road type
+        road_weights = {
+            "motorway": 1,
+            "trunk": 1.2,
+            "primary": 1.5,
+            "secondary": 2,
+            "tertiary": 2.5,
+            "unclassified": 3,
+            "residential": 4,
+            "living_street": 5
+        }
+        weight = road_weights.get(road_type, 5)
+        
         # split coordinates into line segments
         coordinates = element["geometry"]["coordinates"]
         line_segments = [
@@ -67,7 +80,7 @@ def transform_osm_data(orig_data: dict) -> dict:
                     "properties": {
                         "nazev": name,
                         "oneway": oneway,
-                        "type": highway_type,
+                        "weight": weight,
                         "maxspeed": maxspeed,
                     },
                     "geometry": {"type": "LineString", "coordinates": segment},
