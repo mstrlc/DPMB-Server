@@ -13,23 +13,27 @@ from finding_route_helpers import find_path_within_ellipse
 from street_stats import prepare_stats_count
 from utils import get_data, get_color, assign_color, get_street_path, count_delays_by_parts
 
-G = nx.Graph()
+G = nx.DiGraph()
 
 
-def add_linestring_to_graph(geom, label):
+def add_linestring_to_graph(geom, label, oneway):
     nodes = list(geom.coords)
     for i in range(len(nodes) - 1):
         u, v = nodes[i], nodes[i+1]
         dist = Point(u).distance(Point(v))
         G.add_edge(u, v, weight=dist, label=label)
+        # also add the reverse edge if oneway is "no"
+        if oneway == "no":
+            G.add_edge(v, u, weight=dist, label=label)
 
 
 def create_graph(gdf):
     for _, row in gdf.iterrows():
         geom = row['geometry']
         label = row['nazev']
+        oneway = row['oneway']
         if isinstance(geom, LineString):
-            add_linestring_to_graph(geom, label)
+            add_linestring_to_graph(geom, label, oneway)
     # nx.write_graphml(G, "datasets/road_network_with_labels.graphml")
 
 
@@ -158,7 +162,8 @@ def find_route_by_coord(src_coord, dst_coord,
         major_axis = abs(lat_source - lat_dst) / 2
         minor_axis = abs(long_source - long_dst) /2
 
-        path = find_path_within_ellipse(G, source, destination, ellipse_center, major_axis, minor_axis)
+        # path = find_path_within_ellipse(G, source, destination, ellipse_center, major_axis, minor_axis)
+        path = nx.astar_path(G, source, destination, weight='weight')
 
     except nx.NetworkXNoPath:
         return [], [], []
